@@ -10,7 +10,6 @@
 import urllib,urllib2, re, sys, time, getopt, os, os.path
 from urlparse import urlparse
 from urllib2 import Request, urlopen, URLError
-from ID3 import *
 from htmlentitydefs import name2codepoint as n2cp
 
 def main():
@@ -146,7 +145,7 @@ def returnPage(yaurl):
 	opener = urllib2.build_opener(urllib2.HTTPCookieProcessor())
 	urllib2.install_opener(opener) 
 	req = urllib2.Request(yaurl)
-	req.add_header('User-Agent','Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.8.1.6) Gecko/20070725 Firefox/2.0.0.6')
+	req.add_header('User-Agent','Mozilla/5.0 (Windows NT 10.0; WOW64; rv:42.0) Gecko/20100101 Firefox/42.0')
 
 	try:
 		response = opener.open(req).read()
@@ -162,7 +161,7 @@ def returnPage(yaurl):
 
 def remoteFileExist(yaurl):
 	req = urllib2.Request(yaurl)
-	req.add_header('User-Agent','Mozilla/5.0 (Windows; U; Windows NT 5.1; en-GB; rv:1.8.1.6) Gecko/20070725 Firefox/2.0.0.6')
+	req.add_header('User-Agent','Mozilla/5.0 (Windows NT 10.0; WOW64; rv:42.0) Gecko/20100101 Firefox/42.0')
 	try:
 		resp = urllib2.urlopen(req)
 	except urllib2.URLError, e:
@@ -331,8 +330,9 @@ def showTag(filename):
 	id3info = ID3(filename)
 	return id3info
 
+# https://github.com/sku/python-twitter-ircbot/blob/321d94e0e40d0acc92f5bf57d126b57369da70de/html_decode.py 
 def decode_htmlentities(string):
-# taken from sku at github (https://github.com/sku/python-twitter-ircbot/blob/321d94e0e40d0acc92f5bf57d126b57369da70de/html_decode.py) 
+
     def substitute_entity(match):
         ent = match.group(3)
         if match.group(1) == "#":
@@ -352,6 +352,7 @@ def decode_htmlentities(string):
     entity_re = re.compile(r'&(#?)(x?)(\w+);')
     return entity_re.subn(substitute_entity, string)[0]
 
+# http://stackoverflow.com/questions/1342000/how-to-make-the-python-interpreter-correctly-handle-non-ascii-characters-in-stri
 def removeNonAscii(s): return "".join(i for i in s if ord(i)<128)
 	
 if __name__ == "__main__":
