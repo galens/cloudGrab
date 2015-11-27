@@ -11,6 +11,7 @@ import urllib,urllib2, re, sys, time, getopt, os, os.path
 from urlparse import urlparse
 from urllib2 import Request, urlopen, URLError
 from htmlentitydefs import name2codepoint as n2cp
+from mimetypes import guess_extension
 
 def main():
 	try:
@@ -148,14 +149,15 @@ def returnPage(yaurl, song=False):
 	opener = urllib2.build_opener(urllib2.HTTPCookieProcessor())
 	urllib2.install_opener(opener) 
 	req = urllib2.Request(yaurl)
-	req.add_header('User-Agent','Mozilla/5.0 (Windows NT 10.0; WOW64; rv:42.0) Gecko/20100101 Firefox/42.0')
+	req.add_header('User-Agent', user_agent)
 
 	try:
 		if song:
 			print 'Downloading file.'
 			CHUNK = 16 * 1024
 			response = urllib2.urlopen(yaurl)
-			with open(song, 'wb') as f:
+			extension = guess_extension(response.info()['Content-Type'])
+			with open(song+extension, 'wb') as f:
 				while True:
 					chunk = response.read(CHUNK)
 					if not chunk: break
@@ -242,12 +244,21 @@ def directRip(yaurl,maxretries):
 	site_content = returnPage(yaurl)
 	if (site_content != None) | (site_content != False):
 		site_content = clean_output(site_content)
+		
+		downloadable = re.findall("downloadable\":(false|true),\"", site_content)
+		if 'true' in downloadable:
+			download_url = re.findall("\"download_url\":\".{1,200},\"duration\":", site_content)
+			download_url = download_url[0][16:-13]
+		else:
+			download_url = False
+		
 		username	 = re.findall("username\":\".{1,100}\",\"", site_content)
 		username	 = username[0].split(':')
 		username 	 = username[1][1:-17]
 
-		title		 = re.findall("title\":\".{1,100}\",\"", site_content)
-		title		 = title[0][8:-3]
+		title		 = re.findall("title\":\".{1,100}\",\"uri\":\"", site_content)
+		title		 = title[0][8:-9]
+		title		 = title.replace("'", '')
 		
 		site_app_js  = re.findall("src.{1,20}cdn.com\/assets\/app.{1,20}\.js", site_content)
 		site_app_js  = site_app_js[0].replace('src="', '')
@@ -270,9 +281,13 @@ def directRip(yaurl,maxretries):
 
 		source_url 	 = returnPage(song_url)
 		source_url 	 = clean_output(source_url)
-		source_url	 = re.findall('"http_mp3_128_url":".{1,1000}","preview_mp3_128_url"', source_url)
-		source_url	 = source_url[0].replace('"http_mp3_128_url":"', '')
-		source_url	 = source_url.replace('","preview_mp3_128_url"', '')
+		
+		if download_url:
+			source_url = '%s?client_id=%s' % (download_url, client_id)
+		else: 
+			source_url	 = re.findall('"http_mp3_128_url":".{1,1000}","preview_mp3_128_url"', source_url)
+			source_url	 = source_url[0].replace('"http_mp3_128_url":"', '')
+			source_url	 = source_url.replace('","preview_mp3_128_url"', '')
 		
 		# create subdirectory
 		subdir = out+username
@@ -289,12 +304,13 @@ def directRip(yaurl,maxretries):
 			fileout = subdir
 
 		# rip song
-		file_name = fileout+title+".mp3"
-
+		file_name = '%s%s' % (fileout, title)
+		
 		if os.path.exists(file_name):
 			print "File "+title+" already exists! Skipping."
 		else:
 			returnPage(source_url, file_name)
+			#returnPage('https://api.soundcloud.com/tracks/216493786/download?client_id=02gUJC0hH2ct1EGOcYXQIzRFU91c72Ea', file_name)
 	else:
 		if maxretries == 0:
 			print "There was an unexpected error with: "+yaurl+" ...skipping"
