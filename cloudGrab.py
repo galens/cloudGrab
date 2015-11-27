@@ -1,11 +1,11 @@
 #!/usr/bin/python
 
-# cloudGrab by: Galen
-# 03/01/2010
+# cloudGrab by: Galen Senogles
+# created: 03/01/2010
+# updated: 11/26/2015
 #
-# known bugs: 
-#  - saves file as mp3 no matter what; need to implement proper mime/type checking to fix
-#  - jul 2013 - i dont think this works anymore and needs to be rewritten with new urls
+# version 0.1
+#
 
 import urllib,urllib2, re, sys, time, getopt, os, os.path
 from urlparse import urlparse
@@ -24,6 +24,9 @@ def main():
 	global album
 	global genre
 	global retries
+	global user_agent
+	
+	user_agent = 'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:42.0) Gecko/20100101 Firefox/42.0';
 
 	direct = False
 	spider = False
@@ -75,11 +78,11 @@ def main():
 			print "                                id3 tag for all ripped mp3s"
 			print "---- Examples ----"
 			print "  Spider an entire artists collection:"
-			print "     "+sys.argv[0]+" -s -m artist -k the-andychrist -o \"/home/user/music/rips/\""
+			print "     "+sys.argv[0]+" -s -m artist -k dogoftears -o \"/home/user/music/rips/\""
 			print "  Rip a single track only:"
-			print "     "+sys.argv[0]+" -d -u \"http://soundcloud.com/the-andychrist/the-andychrist-clouds-are-floating-lakes\" -o \"/home/user/music/rips/\""
+			print "     "+sys.argv[0]+" -d -u \"https://soundcloud.com/dogoftears/spiral70a-mastered-by-sean-price-mlc\" -o \"/home/user/music/rips/\""
 			print "  Rip a single track and specify id3 info:"
-			print "     "+sys.argv[0]+" -d -u \"http://soundcloud.com/the-andychrist/the-andychrist-clouds-are-floating-lakes\" -o \"/home/user/music/rips/\" -a \"the andychrist\" -g \"goa\""
+			print "     "+sys.argv[0]+" -d -u \"https://soundcloud.com/dogoftears/spiral70a-mastered-by-sean-price-mlc\" -o \"/home/user/music/rips/\" -a \"the Dog of Tears\" -g \"rusted fucktech\""
 			sys.exit()
 		elif o in ("-d", "--direct"):
 			direct = a
@@ -141,27 +144,37 @@ def main():
 		spiderSc(method,key)
 		sys.exit()
 
-def returnPage(yaurl):
+def returnPage(yaurl, song=False):
 	opener = urllib2.build_opener(urllib2.HTTPCookieProcessor())
 	urllib2.install_opener(opener) 
 	req = urllib2.Request(yaurl)
 	req.add_header('User-Agent','Mozilla/5.0 (Windows NT 10.0; WOW64; rv:42.0) Gecko/20100101 Firefox/42.0')
 
 	try:
-		response = opener.open(req).read()
+		if song:
+			print 'Downloading file.'
+			CHUNK = 16 * 1024
+			response = urllib2.urlopen(yaurl)
+			with open(song, 'wb') as f:
+				while True:
+					chunk = response.read(CHUNK)
+					if not chunk: break
+					f.write(chunk)
+		else:
+			response = opener.open(req).read()
 	except URLError, e:
 		if hasattr(e, 'reason'):
 			print 'We failed to reach a server.'
 			print 'Reason: ', e.reason
 		elif hasattr(e, 'code'):
 			print 'The server couldn\'t fulfill the request.'
-			print 'Error code: ', e.code
+			print 'Error code: ', e.code	
 	else:
 		return response
 
 def remoteFileExist(yaurl):
 	req = urllib2.Request(yaurl)
-	req.add_header('User-Agent','Mozilla/5.0 (Windows NT 10.0; WOW64; rv:42.0) Gecko/20100101 Firefox/42.0')
+	req.add_header('User-Agent',user_agent)
 	try:
 		resp = urllib2.urlopen(req)
 	except urllib2.URLError, e:
@@ -169,7 +182,7 @@ def remoteFileExist(yaurl):
 	else:
 		return True
 
-def spiderSc(yamethod,yakey):
+def spiderSc(yamethod, yakey):
 	# check which method was used
 	if yamethod == "artist":
 		yastack = []
@@ -219,35 +232,54 @@ def spiderSc(yamethod,yakey):
 					directRip(full,retries)
 	else:
 		print "Alternate spider methods have not been implemented, use artist only for now"
+		
+def clean_output(dirty):
+	dirty = dirty.replace("\u0026","&")
+	dirty = dirty.replace("amp;","")
+	return decode_htmlentities(removeNonAscii(dirty))
 
 def directRip(yaurl,maxretries):
-	raw = returnPage(yaurl)
-	if (raw != None) | (raw != False):
-		raw = raw.replace("\u0026","&")
-		raw = raw.replace("amp;","")
-		raw = removeNonAscii(raw)
-		raw = decode_htmlentities(raw)
+	site_content = returnPage(yaurl)
+	if (site_content != None) | (site_content != False):
+		site_content = clean_output(site_content)
+		username	 = re.findall("username\":\".{1,100}\",\"", site_content)
+		username	 = username[0].split(':')
+		username 	 = username[1][1:-17]
 
-		rawid = re.findall("\"uid\":\"\w{12}\",\"user\"",raw)
-		uid   = re.findall("\w{12}",rawid[0])
+		title		 = re.findall("title\":\".{1,100}\",\"", site_content)
+		title		 = title[0][8:-3]
+		
+		site_app_js  = re.findall("src.{1,20}cdn.com\/assets\/app.{1,20}\.js", site_content)
+		site_app_js  = site_app_js[0].replace('src="', '')
+		app_js 		 = returnPage(site_app_js)
+		app_js		 = clean_output(app_js)
 
-		rawfold = re.findall("\"permalink\":\".{1,200}\"\},\"uri",raw)
-		rawfold = rawfold[0].replace("\"permalink\":\"","")
-		folder  = rawfold[:-7]
-		folder  = folder.replace("-"," ")
-		folder  = folder.title()
+		app_version  = re.findall("sc_version.{1,30}\"", site_content)
+		app_version	 = app_version[0].replace('sc_version = "', '')
+		app_version	 = app_version.replace('"', '')
 
-		rawtitle = re.findall("\"title\":\".{1,200}\",\"commentable",raw)
-		rawtitle = rawtitle[0].replace("\"title\":\"","")
-		title    = rawtitle.replace("\",\"commentable","")
-		title    = title.replace("/","-")
+		client_id	 = re.findall("client_id:\".{1,50}\"", app_js)
+		client_id	 = client_id[0].replace('client_id:"', '')
+		client_id	 = client_id.replace('"', '')
 
+		api_number	 = re.findall("sounds:.{1,20}\"", site_content)
+		api_number	 = api_number[-1].replace('sounds:','')
+		api_number	 = api_number.replace('"','')
+
+		song_url	 = 'https://api.soundcloud.com/i1/tracks/%s/streams?client_id=%s&app_version=%s' % (api_number, client_id, app_version)
+
+		source_url 	 = returnPage(song_url)
+		source_url 	 = clean_output(source_url)
+		source_url	 = re.findall('"http_mp3_128_url":".{1,1000}","preview_mp3_128_url"', source_url)
+		source_url	 = source_url[0].replace('"http_mp3_128_url":"', '')
+		source_url	 = source_url.replace('","preview_mp3_128_url"', '')
+		
 		# create subdirectory
-		subdir = out+folder
+		subdir = out+username
 		if subdir[len(subdir)-1:len(subdir)] != "/":
 			subdir += "/"
 		if not os.path.exists(subdir):
-			print "Creating subdirectory: "+folder
+			print "Creating subdirectory: "+username
 			os.makedirs(subdir)
 
 		if not os.path.exists(subdir):
@@ -257,64 +289,12 @@ def directRip(yaurl,maxretries):
 			fileout = subdir
 
 		# rip song
-		ripurl = "http://media.soundcloud.com/stream/"+uid[0]
 		file_name = fileout+title+".mp3"
 
 		if os.path.exists(file_name):
 			print "File "+title+" already exists! Skipping."
 		else:
-			pgExist = remoteFileExist(ripurl)		
-			if pgExist == False:
-				for i in range(1,retries+1):
-					pgExist = remoteFileExist(ripurl)
-					if pgExist != False:
-						break
-			if pgExist == False:
-				print "There was a problem downloading "+title+" ... Skipping."
-			else:
-				u = urllib2.urlopen(ripurl)
-				f = open(file_name, 'wb')
-				meta = u.info()
-				file_size = int(meta.getheaders("Content-Length")[0])
-				print "Downloading: %s Bytes: %s" % (file_name, file_size)
-
-				file_size_dl = 0
-				block_sz = 1024
-				while True:
-					buffer = u.read(block_sz)
-					if not buffer:
-						break
-
-					file_size_dl += block_sz
-					f.write(buffer)
-					status = r"%10d  [%3.2f%%]" % (file_size_dl, file_size_dl * 100. / file_size)
-					status = status + chr(8)*(len(status)+1)
-					print status,
-				f.close()
-
-				if title.count('-'):
-					arTitle = title.split('-')
-					yaartist = arTitle[0].strip(' ')
-					yatitle  = arTitle[1].strip(' ')
-				else:
-					yaartist = folder.strip(' ')
-					yatitle  = title.strip(' ')
-
-				if artist != False:
-					yaartist = artist
-				
-				if album != False:
-					tagMp3(file_name,'ALBUM',album)
-
-				if genre != False:
-					tagMp3(file_name,'GENRE',genre)
-
-				yacomment = "galen's cloudGrab"
-
-				print "Writing ID3 tags to file: "+title
-				tagMp3(file_name,'ARTIST',yaartist)	
-				tagMp3(file_name,'TITLE',yatitle)
-				tagMp3(file_name,'COMMENT',yacomment)
+			returnPage(source_url, file_name)
 	else:
 		if maxretries == 0:
 			print "There was an unexpected error with: "+yaurl+" ...skipping"
