@@ -2,7 +2,7 @@ cloudGrab by: Galen
 
 This is a soundcloud ripper and spider implemented in python. It can download a single song url, or an entire artists collection.  Other options will be implemented soon.
 
-The mp3 will automatically be tagged with the id3 tag title, and artist if it can locate it. You may override these and directly specify the artist, album, or genre.
+The script will attempt to detect if the artist allows downloads and if so, attempts to use that file as it typically has a higher bitrate than the standard song file.  It can detect if there are embedded playlists within a collection and will automatically download the songs within that list.
 
 ./cloudGrab.py -h
  ### cloudGrab - the soundcloud spider - by: Galen ### 
@@ -34,19 +34,6 @@ Usage: ./cloudGrab.py [options]
   Spider an entire artists collection:
      ./cloudGrab.py -s -m artist -k the-andychrist -o "/home/user/music/rips/"
   Rip a single track only:
-     ./cloudGrab.py -d -u "http://soundcloud.com/the-andychrist/the-andychrist-clouds-are-floating-lakes" -o "/home/user/music/rips/"
+     ./cloudGrab.py -d -u "https://soundcloud.com/dogoftears/spiral70a-mastered-by-sean-price-mlc" -o "/home/user/music/rips/"
   Rip a single track and specify id3 info:
-     ./cloudGrab.py -d -u "http://soundcloud.com/the-andychrist/the-andychrist-clouds-are-floating-lakes" -o "/home/user/music/rips/" -a "the andychrist" -g "goa"
-
-
-known bugs:
-  - saves file as mp3 no matter what; need to implement proper mime/type checking
-
-limitation:
-  - if you decide to write a genre id3 tag, it may only be out of this win-amp genre list:
-
-Blues, Classic Rock, Country, Dance, Disco, Funk, Grunge, Hip-Hop, Jazz, Metal, New Age, Oldies, Other, Pop, R&B,
-Rap, Reggae, Rock, Techno, Industrial, Alternative, Ska, Death Metal, Pranks, Soundtrack, Euro-Techno, Ambient,Trip-Hop, Vocal, Jazz+Funk, Fusion, Trance, Classical, Instrumental, Acid, House, Game, Sound Clip, Gospel, Noise, Alt. Rock, Bass, Soul, Punk, Space, Meditative, Instrum. Pop, Instrum. Rock, Ethnic, Gothic, Darkwave, Techno-Indust.,Electronic, Pop-Folk, Eurodance, Dream, Southern Rock, Comedy, Cult, Gangsta, Top 40, Christian Rap, Pop/Funk, Jungle,Native American, Cabaret, New Wave, Psychadelic, Rave, Showtunes, Trailer, Lo-Fi, Tribal, Acid Punk, Acid Jazz, Polka, Retro, Musical, Rock & Roll, Hard Rock, Folk, Folk/Rock, National Folk, Swing, Fusion, Bebob, Latin, Revival, Celtic,Bluegrass, Avantgarde, Gothic Rock, Progress. Rock, Psychadel. Rock, Symphonic Rock, Slow Rock, Big Band, Chorus,Easy Listening, Acoustic, Humour, Speech, Chanson, Opera, Chamber Music, Sonata, Symphony, Booty Bass, Primus,
-Porn Groove, Satire, Slow Jam, Club, Tango, Samba, Folklore, Ballad, Power Ballad, Rhythmic Soul, Freestyle, Duet, Punk Rock, Drum Solo, A Capella, Euro-House, Dance Hall, Goa, Drum & Bass, Club-House, Hardcore, Terror, Indie, BritPop, Negerpunk, Polsk Punk, Beat, Christian Gangsta Rap, Heavy Metal, Black Metal, Crossover, Contemporary Christian, Christian Rock, Merengue, Salsa, Thrash Metal, Anime, Jpop, Synthpop
-
-
+     ./cloudGrab.py -d -u "https://soundcloud.com/dogoftears/spiral70a-mastered-by-sean-price-mlc" -o "/home/user/music/rips/" -a "the Dog of Tears" -g "rusted fucktech"

@@ -1,13 +1,13 @@
 #!/usr/bin/python
 
-# cloudGrab by: Galen Senogles
-# created: 03/01/2010
-# updated: 11/26/2015
+# cloudGrab by:   Galen Senogles
+# created: 		  03/01/2010
+# latest updated: 12/24/2015
 #
-# version 0.1
+# version 0.2
 #
 
-import urllib,urllib2, re, sys, time, getopt, os, os.path
+import urllib,urllib2, re, sys, time, getopt, os, os.path, fnmatch, json
 from urlparse import urlparse
 from urllib2 import Request, urlopen, URLError
 from htmlentitydefs import name2codepoint as n2cp
@@ -24,7 +24,6 @@ def main():
 	global artist
 	global album
 	global genre
-	global retries
 	global user_agent
 	
 	user_agent = 'Mozilla/5.0 (Windows NT 10.0; WOW64; rv:42.0) Gecko/20100101 Firefox/42.0';
@@ -46,8 +45,6 @@ def main():
 	keyf    = False
 	outf    = False
 
-	retries = 5
-
 	if not sys.argv[1:]:
 		print sys.argv[0]+" -h or --help for help"
 		sys.exit()
@@ -59,7 +56,7 @@ def main():
 			print "   -d  --direct                 rip a song directly"
 			print "                                needs url (-u) parameter only"
 			print "   -s  --spider                 spider through soundcloud"
-			print "                                needs both type (-t) and key (-k) parameter"
+			print "                                needs both method (-m) and key (-k) parameter"
 			print "---- Variables ----"
 			print "   -u  --url=<soundcloud url>   url to test"
 			print "                                needed in direct mode (-d)"
@@ -138,7 +135,7 @@ def main():
 			sys.exit()
 	if directf & urlf:
 		print "Ripping: "+url
-		directRip(url,retries)
+		directRip(url)
 		sys.exit()
 	if spiderf & methodf & keyf:
 		print "Spidering: "+method+" "+key
@@ -155,9 +152,27 @@ def returnPage(yaurl, song=False):
 		if song:
 			print 'Downloading file.'
 			CHUNK = 16 * 1024
-			response = urllib2.urlopen(yaurl)
+			try:
+				response = urllib2.urlopen(yaurl)
+			except urllib2.HTTPError, err:
+				if err.code == 404:
+					print "Page not found error, exiting!"
+					exit()
+				elif err.code == 401:
+					# this occurs when you attempt to download a song when you are not allowed to
+					# which shouldn't occur except soundcloud has bugs(?) and incorrectly said the song was downloadable
+					return 'unauthorized'
+				elif err.code == 403:
+					print "Access denied error, exiting!"
+					exit()
+				else:
+					print "Something happened! Error code", err.code
+			except urllib2.URLError, err:
+				print "Some other error happened:", err.reason
+				exit()
 			extension = guess_extension(response.info()['Content-Type'])
-			with open(song+extension, 'wb') as f:
+			file_path = (song+extension)
+			with open(file_path.strip(), 'wb') as f:
 				while True:
 					chunk = response.read(CHUNK)
 					if not chunk: break
@@ -183,55 +198,56 @@ def remoteFileExist(yaurl):
 		return False
 	else:
 		return True
+		
+def returnList(offset=0):	
+	full_url = 'https://api-v2.soundcloud.com/stream/users/%s?client_id=%s&limit=10000&offset=0&linked_partitioning=1&app_version=%s' % (user_vars['user_id'], user_vars['client_id'], user_vars['app_version']) 
+	#print full_url
+	
+	return returnPage(full_url)
+	
+def loop_maintenance(dl, rt):
+	dl += 1
+	rt += 1
+	if(rt == 10):
+		time.sleep(5)
+		rt = 0
+		
+	return [dl, rt]
 
 def spiderSc(yamethod, yakey):
 	# check which method was used
+	songs_downloaded = 0
+	rotations = 0
+	
 	if yamethod == "artist":
-		yastack = []
 		urlFull = "http://soundcloud.com/"+yakey
-		pgTest  = returnPage(urlFull)
+		print urlFull
+		site_content  = returnPage(urlFull)
 
-		if (pgTest == None) | (pgTest == False):
+		if (site_content == None) | (site_content == False):
 			print "The sound cloud url of: http://soundcloud.com/"+yakey+" appears to be invalid.\nPlease check the url and try again"
 			sys.exit()
+			
+		set_user_vars(site_content)
 
-		# find number of pages
-		pages = re.findall("page=\w{1,5}",pgTest)
-		
-		if not pages:
-			# only one page of song links
-			pgurl     = urlFull+"/tracks?page=1"
-			retTracks = returnPage(pgurl)
-			rawurl    = re.findall("\},\"uri\":\".{1,500}\",\"duration",retTracks)
-				
-			# iterate tracks on a page
-			for j in rawurl:
-				rawSong = j[9:-11]
-				full    = "http://soundcloud.com"+rawSong
-				directRip(full,retries)
-		else:
-			# multiple pages of song links
-			for pg in pages:
-				tmp = pg.split('=')
-				yastack.append(tmp[1])
-
-			# highest page
-			maxpg = max(yastack)
-			cnt   = 0
-
-			# iterate pages
-			for i in range(1,int(maxpg)+1):
-				cnt += 1
-				strCnt    = str(cnt)
-				pgurl     = urlFull+"/tracks?page="+strCnt
-				retTracks = returnPage(pgurl)
-				rawurl    = re.findall("\},\"uri\":\".{1,500}\",\"duration",retTracks)
-				
-				# iterate tracks on a page
-				for j in rawurl:
-					rawSong = j[9:-11]
-					full    = "http://soundcloud.com"+rawSong
-					directRip(full,retries)
+		list_content = clean_output(returnList())
+		parsed_list  = json.loads(list_content, strict=False)
+		for i in parsed_list['collection']:
+			if 'track' in i:
+				print 'ripping: ' + i['track']['permalink_url']
+				ret_main = loop_maintenance(songs_downloaded, rotations)
+				rotations = ret_main[1]
+				songs_downloaded = ret_main[0]
+				directRip(i['track']['permalink_url'])
+			elif 'playlist' in i:
+				for j in i['playlist']['tracks']:
+					if 'permalink_url' in j:
+						print 'ripping: ' + j['permalink_url']
+						ret_main = loop_maintenance(songs_downloaded, rotations)
+						rotations = ret_main[1]
+						songs_downloaded = ret_main[0]
+						
+		print '%s songs downloaded!' % (songs_downloaded)
 	else:
 		print "Alternate spider methods have not been implemented, use artist only for now"
 		
@@ -239,84 +255,150 @@ def clean_output(dirty):
 	dirty = dirty.replace("\u0026","&")
 	dirty = dirty.replace("amp;","")
 	return decode_htmlentities(removeNonAscii(dirty))
+	
+def set_user_vars(site_content, app_js_check=None):
+	global user_vars
+	global app_js
+	 
+	user_vars = {}	
+	site_content = clean_output(site_content)
+		
+	username	 = re.findall("username\":\".{1,100}\",\"verified", site_content)
+	username	 = username[0].split(':')
+	username 	 = username[1][1:-11]
+	username	 = username.replace("'", '')
+	username	 = username.replace('"', '')
+	username	 = username.replace('\\', '')
+	username	 = username.replace('/', '')
+	username	 = username.replace('?', '')
+	username	 = username.replace(':', '')
+	username	 = username.replace('*', '')
+	username	 = username.replace('<', '')
+	username	 = username.replace('>', '')
+	username	 = username.replace('|', '')
 
-def directRip(yaurl,maxretries):
-	site_content = returnPage(yaurl)
-	if (site_content != None) | (site_content != False):
-		site_content = clean_output(site_content)
-		
-		downloadable = re.findall("downloadable\":(false|true),\"", site_content)
-		if 'true' in downloadable:
-			download_url = re.findall("\"download_url\":\".{1,200},\"duration\":", site_content)
-			download_url = download_url[0][16:-13]
-		else:
-			download_url = False
-		
-		username	 = re.findall("username\":\".{1,100}\",\"", site_content)
-		username	 = username[0].split(':')
-		username 	 = username[1][1:-17]
-
-		title		 = re.findall("title\":\".{1,100}\",\"uri\":\"", site_content)
-		title		 = title[0][8:-9]
-		title		 = title.replace("'", '')
-		
+	if app_js_check == None:
 		site_app_js  = re.findall("src.{1,20}cdn.com\/assets\/app.{1,20}\.js", site_content)
 		site_app_js  = site_app_js[0].replace('src="', '')
 		app_js 		 = returnPage(site_app_js)
 		app_js		 = clean_output(app_js)
 
-		app_version  = re.findall("sc_version.{1,30}\"", site_content)
-		app_version	 = app_version[0].replace('sc_version = "', '')
-		app_version	 = app_version.replace('"', '')
+	app_version  = re.findall("sc_version.{1,30}\"", site_content)
+	app_version	 = app_version[0].replace('sc_version = "', '')
+	app_version	 = app_version.replace('"', '')
 
-		client_id	 = re.findall("client_id:\".{1,50}\"", app_js)
-		client_id	 = client_id[0].replace('client_id:"', '')
-		client_id	 = client_id.replace('"', '')
-
-		api_number	 = re.findall("sounds:.{1,20}\"", site_content)
-		api_number	 = api_number[-1].replace('sounds:','')
-		api_number	 = api_number.replace('"','')
-
-		song_url	 = 'https://api.soundcloud.com/i1/tracks/%s/streams?client_id=%s&app_version=%s' % (api_number, client_id, app_version)
-
-		source_url 	 = returnPage(song_url)
-		source_url 	 = clean_output(source_url)
+	client_id	 = re.findall("client_id:\".{1,50}\"", app_js)
+	client_id	 = client_id[0].replace('client_id:"', '')
+	client_id	 = client_id.replace('"', '')
+	
+	try:	
+		user_id		 = re.findall("soundcloud://users:.{1,15}\"", site_content)
+		user_id		 = user_id[0].split(':')
+		user_id		 = user_id[2][:-1]
+		user_vars['user_id'] = user_id
+	except:
+		pass
+				
+	user_vars['username'] = username
+	user_vars['site_app_js'] = site_app_js
+	user_vars['app_version'] = app_version
+	user_vars['client_id'] = client_id	
+	#print user_vars
 		
-		if download_url:
-			source_url = '%s?client_id=%s' % (download_url, client_id)
-		else: 
-			source_url	 = re.findall('"http_mp3_128_url":".{1,1000}","preview_mp3_128_url"', source_url)
-			source_url	 = source_url[0].replace('"http_mp3_128_url":"', '')
-			source_url	 = source_url.replace('","preview_mp3_128_url"', '')
-		
-		# create subdirectory
-		subdir = out+username
-		if subdir[len(subdir)-1:len(subdir)] != "/":
-			subdir += "/"
-		if not os.path.exists(subdir):
-			print "Creating subdirectory: "+username
-			os.makedirs(subdir)
-
-		if not os.path.exists(subdir):
-			print "Failed to create subdirectory, saving file to: "+out
-			fileout = out
-		else:
-			fileout = subdir
-
-		# rip song
-		file_name = '%s%s' % (fileout, title)
-		
-		if os.path.exists(file_name):
-			print "File "+title+" already exists! Skipping."
-		else:
-			returnPage(source_url, file_name)
-			#returnPage('https://api.soundcloud.com/tracks/216493786/download?client_id=02gUJC0hH2ct1EGOcYXQIzRFU91c72Ea', file_name)
+def set_track_vars(site_content, no_download=False):
+	global track_vars
+	
+	track_vars  = {}
+	site_content = clean_output(site_content)
+	
+	downloadable = re.findall("downloadable\":(false|true),\"", site_content)
+	if 'true' in downloadable:
+		download_url = re.findall("\"download_url\":\".{1,200},\"duration\":", site_content)
+		download_url = download_url[0][16:-13]
 	else:
-		if maxretries == 0:
-			print "There was an unexpected error with: "+yaurl+" ...skipping"
+		download_url = False	
+			
+	title		 = re.findall("title\":\".{1,100}\",\"uri\":\"", site_content)
+	title		 = title[0][8:-9]
+	title		 = title.replace("'", '')
+	title		 = title.replace('"', '')
+	title		 = title.replace("\\", '')
+	title		 = title.replace("/", '')
+	title		 = title.replace("?", '')
+	title		 = title.replace(":", '')
+	title		 = title.replace("*", '')
+	title		 = title.replace("<", '')
+	title		 = title.replace(">", '')
+	title		 = title.replace("|", '')
+
+	api_number	 = re.findall("sounds:.{1,20}\"", site_content)
+	api_number	 = api_number[-1].replace('sounds:','')
+	api_number	 = api_number.replace('"','')
+
+	song_url	 = 'https://api.soundcloud.com/i1/tracks/%s/streams?client_id=%s&app_version=%s' % (api_number, user_vars['client_id'], user_vars['app_version'])
+
+	source_url 	 = returnPage(song_url)
+	source_url 	 = clean_output(source_url)
+		
+	if (download_url) and (no_download == False):
+		source_url = '%s?client_id=%s' % (download_url, user_vars['client_id'])
+	else: 
+		parsed  = json.loads(source_url)
+		source_url = parsed['http_mp3_128_url']
+
+	track_vars['download_url'] = download_url
+	track_vars['title'] = title
+	track_vars['api_number'] = api_number
+	track_vars['song_url'] = song_url
+	track_vars['source_url'] = source_url
+	
+def find(pattern, path):
+    result = []
+    for root, dirs, files in os.walk(path):
+        for name in files:
+            if fnmatch.fnmatch(name, pattern):
+                result.append(os.path.join(root, name))
+    return result
+	
+def directRip(yaurl):
+	count = 0
+	while(count < 3):
+		site_content = returnPage(yaurl)
+		if (site_content != None) | (site_content != False):
+			break
 		else:
-			maxretries -= 1
-			directRip(yaurl,maxretries)
+			count += 1
+			
+	set_user_vars(site_content)
+	set_track_vars(site_content)
+	
+	# create subdirectory
+	subdir = out+user_vars['username']
+	if subdir[len(subdir)-1:len(subdir)] != "/":
+		subdir += "/"
+	if not os.path.exists(subdir):
+		print "Creating subdirectory: "+user_vars['username']
+		os.makedirs(subdir)
+
+	if not os.path.exists(subdir):
+		print "Failed to create subdirectory, saving file to: "+out
+		fileout = out
+	else:
+		fileout = subdir
+
+	# rip song
+	file_name = '%s%s' % (fileout, track_vars['title'])
+	#print file_name
+		
+	if find(track_vars['title'] + '*', fileout):
+		print "File %s already exists! Skipping." % (track_vars['title'])
+	else:
+		response = returnPage(track_vars['source_url'], file_name)
+		if response == 'unauthorized':
+			set_track_vars(site_content, True)
+			returnPage(track_vars['source_url'], file_name)
+			
+		#returnPage('https://api.soundcloud.com/tracks/216493786/download?client_id=02gUJC0hH2ct1EGOcYXQIzRFU91c72Ea', file_name)
 
 def tagMp3(filename,idtag,idvalue):
 	id3info = ID3(filename)
